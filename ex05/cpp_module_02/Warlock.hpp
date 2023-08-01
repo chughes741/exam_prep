@@ -2,10 +2,10 @@
 
 #include <iostream>
 #include <string>
-#include <map>
 
 #include "ASpell.hpp"
 #include "ATarget.hpp"
+#include "SpellBook.hpp"
 
 class Warlock {
   public:
@@ -30,7 +30,7 @@ class Warlock {
     void launchSpell(const std::string &spellName, const ATarget &target);
 
   private:
-    std::map<std::string, ASpell *> spells_;
+    SpellBook spells_;
     std::string name_;
     std::string title_;
 };

@@ -25,15 +25,13 @@ void Warlock::introduce() const {
 }
 
 void Warlock::learnSpell(ASpell *spell) {
-    spells_[spell->getName()] = spell;
+    spells_.learnSpell(spell);
 }
 
 void Warlock::forgetSpell(const std::string &spellName) {
-    spells_.erase(spellName);
+    spells_.forgetSpell(spellName);
 }
 
 void Warlock::launchSpell(const std::string &spellName, const ATarget &target) {
-    if (spells_.find(spellName) != spells_.end()) {
-        spells_[spellName]->launch(target);
-    }
+    spells_.createSpell(spellName)->launch(target);
 }
