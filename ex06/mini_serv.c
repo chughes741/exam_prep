@@ -9,23 +9,25 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#define MAX_BUFFER 512
-#define MAX_CLIENTS 256
-
 void fatal_error() {
 	write(STDERR_FILENO, "Fatal error\n", 12);
 	exit(1);
 }
 
 void send_message(int *clients, const char *message, int client_id, bool from_server) {
-	char server_message[9] = "server: \0";
-	if (!from_server) {
-		server_message[0] = '\0';
+	char *server_message = calloc(1, sizeof(char));
+	if (from_server) {
+		server_message = realloc(server_message, 1 + strlen("server: ") * sizeof(char));
+		strcpy(server_message, "server: ")
 	}
 
-	char buffer[MAX_BUFFER + 64];
+	char *buffer = calloc(strlen(server_message) + strlen(message) + 4, sizeof(char));
+
 	sprintf(buffer, "%sclient: %d %s", server_message, client_id + 1, message);
 	send(clients[client_id], buffer, strlen(buffer), 0);
+
+	free(buffer);
+	free(server_message);
 }
 
 int main(int argc, char **argv) {
@@ -53,13 +55,15 @@ int main(int argc, char **argv) {
 		fatal_error("Fatal error");
 	}
 
-	int clients[MAX_CLIENTS];
-	int num_clients = 0;
+	// clients[0] is the len of clients
+	int* clients = calloc(1, sizeof(int));
 
 	fd_set read_fds;
 	FD_ZERO(&read_fds);
 	FD_SET(server_fd, &read_fds);
 	int max_fd = server_fd;
+
+	char *buffer = calloc(128, sizeof(char));
 
 	while (1) {
 		if (select(max_fd, &read_fds, NULL, NULL, NULL) == -1) {
@@ -72,34 +76,49 @@ int main(int argc, char **argv) {
 				fatal_error("Fatal error");
 			}
 
-			clients[num_clients] = client_fd;
+			clients[clients[0]] = client_fd;
 			FD_SET(client_fd, &read_fds);
 			max_fd = client_fd > max_fd ? client_fd : max_fd;
 
-			send_message(clients, "just arrived\n", num_clients, true);
-			num_clients++;
+			send_message(clients, "just arrived\n", clients[0], true);
+			clients[0]++;
+			clients = realloc(clients, sizeof(int *) * clients[0]);
 		}
 
-		for (int i = 0; i < num_clients; i++) {
+		for (int i = 0; i < clients[0]; i++) {
 			if (FD_ISSET(clients[i], &read_fds)) {
-				char buffer[MAX_BUFFER];
-				int bytes_recieved = recv(clients[i], buffer, MAX_BUFFER - 1, 0);
+				bzero(buffer, 128);
+				int total_bytes = 0;
 
-				if (bytes_recieved > 0) {
-					buffer[bytes_recieved] = '\0';
-					send_message(clients, buffer, i, false);
+				char *message = calloc(1, sizeof(char));
+
+				int bytes_recieved = recv(clients[i], buffer, 127, 0);
+				total_bytes += bytes_recieved;
+				while (bytes_recieved > 0) {
+					message = realloc(message, strlen(message) + strlen(buffer) + 1);
+					strcat(message, buffer);
+					bzero(buffer, 128);
+					bytes_recieved = recv(clients[i], buffer, 127, 0);
+					total_bytes += bytes_recieved;
+				}
+
+				if (total_bytes > 0) {
+					send_message(clients, message, i, false);
 				} else if (close(clients[i]) == -1) {
 					fatal_error("Fatal error");
 				} else {
 					send_message(clients, "just left\n", i, true);
 
-					num_clients--;
-					for (int j = i; j < num_clients; j++) {
+					clients[0]--;
+					for (int j = i; j < clients[0]; j++) {
 						clients[j] = clients[j + 1];
 					}
+					clients = realloc(clients, sizeof(int *) * clients[0]);
 				}
+				free(message);
 			}
 		}
 	}
+	free(clients);
 	return 0;
 }
