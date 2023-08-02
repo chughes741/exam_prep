@@ -85,7 +85,7 @@ int main(int argc, char **argv) {
 			clients = realloc(clients, sizeof(int *) * clients[0]);
 		}
 
-		for (int i = 0; i < clients[0]; i++) {
+		for (int i = 1; i <= clients[0]; i++) {
 			if (FD_ISSET(clients[i], &read_fds)) {
 				bzero(buffer, 128);
 				int total_bytes = 0;
@@ -110,7 +110,7 @@ int main(int argc, char **argv) {
 					send_message(clients, "just left\n", i, true);
 
 					clients[0]--;
-					for (int j = i; j < clients[0]; j++) {
+					for (int j = i; j <= clients[0]; j++) {
 						clients[j] = clients[j + 1];
 					}
 					clients = realloc(clients, sizeof(int *) * clients[0]);
