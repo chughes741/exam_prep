@@ -25,7 +25,7 @@ void send_message_(int *clients, const char *message, int client_id, bool from_s
 	char *buffer = calloc(strlen(server_message) + strlen(message) + 1, sizeof(char));
 	if (buffer == NULL) fatal_error();
 
-	sprintf(buffer, "%s%s", server_message, message);
+	sprintf(buffer, "%s%s\n", server_message, message);
 	for (int i = 1; i <= clients[0]; i++) {
 		if (i == client_id) continue;
 		if (send(clients[i], buffer, strlen(buffer), 0) == -1) fatal_error();
@@ -87,7 +87,7 @@ int main(int argc, char **argv) {
 		}
 
 		// Wait for activity
-		printf("Waiting for activity\n");
+		printf("\nWaiting for activity\n");
 		if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) == -1) fatal_error();
 
 		// Accept new connection
@@ -99,34 +99,23 @@ int main(int argc, char **argv) {
 			max_fd = client_fd > max_fd ? client_fd : max_fd;
 			clients[0] += 1;
 			clients = realloc(clients, (clients[0] + 1) * sizeof(int));
+			clients[clients[0]] = client_fd;
 			if (clients == NULL) fatal_error();
-			send_message(clients, "just arrived\n", clients[0], true);
+			send_message(clients, "just arrived", clients[0], true);
 		} else {
 			// Read message from client
 			for (int i = 1; i <= clients[0]; i++) {
 				printf("Checking client %d\n", i);
 				if (FD_ISSET(clients[i], &read_fds)) {
 					printf("Reading message from client\n");
-					char buffer[128];
-					bzero(buffer, 128);
-					char *message = calloc(1, sizeof(char));
-					if (message == NULL) fatal_error();
+					char buffer[256];
+					bzero(buffer, 256);
+					int bytes_recieved = recv(clients[i], buffer, 255, 0);
 
-					int bytes_recieved = recv(clients[i], buffer, 127, 0);
-					int total_bytes = bytes_recieved;
-					while (bytes_recieved > 0) {
-						message = realloc(message, strlen(message) + strlen(buffer) + 1);
-						if (message == NULL) fatal_error();
-						strcat(message, buffer);
-						bzero(buffer, 128);
-						bytes_recieved = recv(clients[i], buffer, 127, 0);
-						total_bytes += bytes_recieved;
-					}
-
-					if (total_bytes > 0) {
-						send_message(clients, message, i, false);
+					if (bytes_recieved > 0) {
+						send_message(clients, buffer, i, false);
 					} else {
-						send_message(clients, "just left\n", i, true);
+						send_message(clients, "just left", i, true);
 
 						clients[0] -= 1;
 						for (int j = i; j <= clients[0]; j++) {
@@ -135,7 +124,6 @@ int main(int argc, char **argv) {
 						clients = realloc(clients, (clients[0] + 1) * sizeof(int));
 						if (clients == NULL) fatal_error();
 					}
-					free(message);
 				}
 			}
 		}
