@@ -14,20 +14,43 @@ void fatal_error() {
 	exit(1);
 }
 
-void send_message(int *clients, const char *message, int client_id, bool from_server) {
-	char *server_message = calloc(1, sizeof(char));
+void send_message_(int *clients, const char *message, int client_id, bool from_server) {
+	char server_message[64];
 	if (from_server) {
-		server_message = realloc(server_message, 1 + strlen("server: ") * sizeof(char));
-		strcpy(server_message, "server: ")
+		sprintf(server_message, "server: client %d ", client_id - 1);
+	} else {
+		sprintf(server_message, "client %d: ", client_id - 1);
 	}
 
-	char *buffer = calloc(strlen(server_message) + strlen(message) + 4, sizeof(char));
+	char *buffer = calloc(strlen(server_message) + strlen(message) + 1, sizeof(char));
+	if (buffer == NULL) fatal_error();
 
-	sprintf(buffer, "%sclient: %d %s", server_message, client_id + 1, message);
-	send(clients[client_id], buffer, strlen(buffer), 0);
+	sprintf(buffer, "%s%s", server_message, message);
+	for (int i = 1; i <= clients[0]; i++) {
+		if (i == client_id) continue;
+		if (send(clients[i], buffer, strlen(buffer), 0) == -1) fatal_error();
+	}
 
+	printf("%s", buffer);
 	free(buffer);
-	free(server_message);
+}
+
+void send_message(int *clients, const char *message, int client_id, bool from_server) {
+	if (from_server || strstr(message, "\n") == NULL) {
+		send_message_(clients, message, client_id, from_server);
+	} else {
+		char *head = (char *)message;
+		char *tail = strstr(message, "\n");
+		while (tail != NULL) {
+			char *buffer = calloc(tail - head + 1, sizeof(char));
+			if (buffer == NULL) fatal_error();
+			strncpy(buffer, head, tail - head);
+			send_message_(clients, buffer, client_id, from_server);
+			free(buffer);
+			head = tail + 1;
+			tail = strstr(head, "\n");
+		}
+	}
 }
 
 int main(int argc, char **argv) {
@@ -37,9 +60,7 @@ int main(int argc, char **argv) {
 	}
 
 	int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-	if (server_fd == -1) {
-		fatal_error("Fatal error");
-	}
+	if (server_fd == -1) fatal_error();
 
 	struct sockaddr_in server_addr = {
 		.sin_family = AF_INET,
@@ -47,75 +68,75 @@ int main(int argc, char **argv) {
 		.sin_port = htons(atoi(argv[1]))
 	};
 
-	if (bind(server_fd, (const struct sockaddr *)&server_addr, sizeof(server_addr)) != 0) {
-		fatal_error("Fatal error");
-	} 
+	if (bind(server_fd, (const struct sockaddr *)&server_addr, sizeof(server_addr)) != 0) fatal_error();
 
-	if (listen(server_fd, 10) != 0) {
-		fatal_error("Fatal error");
-	}
+	if (listen(server_fd, 10) != 0) fatal_error();
 
 	// clients[0] is the len of clients
 	int* clients = calloc(1, sizeof(int));
-
+	if (clients == NULL) fatal_error();
 	fd_set read_fds;
-	FD_ZERO(&read_fds);
-	FD_SET(server_fd, &read_fds);
 	int max_fd = server_fd;
 
-	char *buffer = calloc(128, sizeof(char));
-
 	while (1) {
-		if (select(max_fd, &read_fds, NULL, NULL, NULL) == -1) {
-			fatal_error("Fatal error");
-		}
-
-		if (FD_ISSET(server_fd, &read_fds)) {
-			int client_fd = accept(server_fd, NULL, NULL);
-			if (client_fd == -1) {
-				fatal_error("Fatal error");
-			}
-
-			clients[clients[0]] = client_fd;
-			FD_SET(client_fd, &read_fds);
-			max_fd = client_fd > max_fd ? client_fd : max_fd;
-
-			send_message(clients, "just arrived\n", clients[0], true);
-			clients[0]++;
-			clients = realloc(clients, sizeof(int *) * clients[0]);
-		}
-
+		// Reset read_fds
+		FD_ZERO(&read_fds);
+		FD_SET(server_fd, &read_fds);
 		for (int i = 1; i <= clients[0]; i++) {
-			if (FD_ISSET(clients[i], &read_fds)) {
-				bzero(buffer, 128);
-				int total_bytes = 0;
+			FD_SET(clients[i], &read_fds);
+		}
 
-				char *message = calloc(1, sizeof(char));
+		// Wait for activity
+		printf("Waiting for activity\n");
+		if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) == -1) fatal_error();
 
-				int bytes_recieved = recv(clients[i], buffer, 127, 0);
-				total_bytes += bytes_recieved;
-				while (bytes_recieved > 0) {
-					message = realloc(message, strlen(message) + strlen(buffer) + 1);
-					strcat(message, buffer);
+		// Accept new connection
+		if (FD_ISSET(server_fd, &read_fds)) {
+			printf("Accepting new connection\n");
+			int client_fd = accept(server_fd, NULL, NULL);
+			if (client_fd == -1) fatal_error();
+
+			max_fd = client_fd > max_fd ? client_fd : max_fd;
+			clients[0] += 1;
+			clients = realloc(clients, (clients[0] + 1) * sizeof(int));
+			if (clients == NULL) fatal_error();
+			send_message(clients, "just arrived\n", clients[0], true);
+		} else {
+			// Read message from client
+			for (int i = 1; i <= clients[0]; i++) {
+				printf("Checking client %d\n", i);
+				if (FD_ISSET(clients[i], &read_fds)) {
+					printf("Reading message from client\n");
+					char buffer[128];
 					bzero(buffer, 128);
-					bytes_recieved = recv(clients[i], buffer, 127, 0);
-					total_bytes += bytes_recieved;
-				}
+					char *message = calloc(1, sizeof(char));
+					if (message == NULL) fatal_error();
 
-				if (total_bytes > 0) {
-					send_message(clients, message, i, false);
-				} else if (close(clients[i]) == -1) {
-					fatal_error("Fatal error");
-				} else {
-					send_message(clients, "just left\n", i, true);
-
-					clients[0]--;
-					for (int j = i; j <= clients[0]; j++) {
-						clients[j] = clients[j + 1];
+					int bytes_recieved = recv(clients[i], buffer, 127, 0);
+					int total_bytes = bytes_recieved;
+					while (bytes_recieved > 0) {
+						message = realloc(message, strlen(message) + strlen(buffer) + 1);
+						if (message == NULL) fatal_error();
+						strcat(message, buffer);
+						bzero(buffer, 128);
+						bytes_recieved = recv(clients[i], buffer, 127, 0);
+						total_bytes += bytes_recieved;
 					}
-					clients = realloc(clients, sizeof(int *) * clients[0]);
+
+					if (total_bytes > 0) {
+						send_message(clients, message, i, false);
+					} else {
+						send_message(clients, "just left\n", i, true);
+
+						clients[0] -= 1;
+						for (int j = i; j <= clients[0]; j++) {
+							clients[j] = clients[j + 1];
+						}
+						clients = realloc(clients, (clients[0] + 1) * sizeof(int));
+						if (clients == NULL) fatal_error();
+					}
+					free(message);
 				}
-				free(message);
 			}
 		}
 	}
