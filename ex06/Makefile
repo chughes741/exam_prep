@@ -6,12 +6,14 @@ HIDE = @
 
 # Compiler and flags
 CC		=	gcc
-CFLAGS	=	-Wall -Werror -Wextra
+CFLAGS	=	-Wall -Werror -Wextra -fsanitize=address
 RM		=	rm -f
 
 # Output file name
 NAME	= mini_serv
 SRC		= mini_serv.c
+
+PORT ?= 8080
 
 all: $(NAME)
 
@@ -27,4 +29,13 @@ fclean: clean
 re: fclean all
 
 run: re
-	$(HIDE)./$(NAME) 8080
+	$(HIDE)./$(NAME) $(PORT)
+
+val: all
+	$(HIDE)valgrind									\
+			--leak-check=full						\
+			--show-leak-kinds=all					\
+			--show-reachable=yes					\
+			--track-fds=yes							\
+			--error-limit=no						\
+			./$(NAME) $(PORT)
