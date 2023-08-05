@@ -33,6 +33,19 @@ void *xrealloc(void *ptr, size_t nmemb, size_t size) {
 	return ptr;
 }
 
+// Copy n characters from src to dest
+void ft_strncpy(char *dest, const char *src, size_t n) {
+	size_t i = 0;
+	while (i < n && src[i] != '\0') {
+		dest[i] = src[i];
+		i++;
+	}
+	while (i < n) {
+		dest[i] = '\0';
+		i++;
+	}
+}
+
 // Send a message to all clients except the sender
 void send_message_(int *clients, const char *message, int client_id, bool from_server) {
 	// Create prefix message
@@ -55,8 +68,6 @@ void send_message_(int *clients, const char *message, int client_id, bool from_s
 		if (send(clients[i], buffer, strlen(buffer), 0) == -1) fatal_error();
 	}
 
-	// Print the message
-	printf("%s", buffer);
 	free(buffer);
 }
 
@@ -73,7 +84,7 @@ void send_message(int *clients, char *message, int client_id, bool from_server) 
 		while (tail != NULL) {
 			// Copy the part of the message before the newline into a new buffer.
 			char *buffer = xalloc(tail - head + 1, sizeof(char));
-			strncpy(buffer, head, tail - head);
+			ft_strncpy(buffer, head, tail - head);
 
 			// Send the part of the message before the newline.
 			send_message_(clients, buffer, client_id, from_server);
@@ -82,6 +93,9 @@ void send_message(int *clients, char *message, int client_id, bool from_server) 
 			free(buffer);
 			head = tail + 1;
 			tail = strstr(head, "\n");
+		}
+		if (head[0] != '\0') {
+			send_message_(clients, head, client_id, from_server);
 		}
 	}
 }
