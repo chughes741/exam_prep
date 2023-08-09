@@ -34,7 +34,7 @@ void *xrealloc(void *ptr, size_t nmemb, size_t size) {
 }
 
 // Copy n characters from src to dest
-void ft_strncpy(char *dest, const char *src, size_t n) {
+void xstrncpy(char *dest, const char *src, size_t n) {
 	size_t i = 0;
 	while (i < n && src[i] != '\0') {
 		dest[i] = src[i];
@@ -84,7 +84,7 @@ void send_message(int *clients, char *message, int client_id, bool from_server) 
 		while (tail != NULL) {
 			// Copy the part of the message before the newline into a new buffer.
 			char *buffer = xalloc(tail - head + 1, sizeof(char));
-			ft_strncpy(buffer, head, tail - head);
+			xstrncpy(buffer, head, tail - head);
 
 			// Send the part of the message before the newline.
 			send_message_(clients, buffer, client_id, from_server);
@@ -133,6 +133,9 @@ int main(int argc, char **argv) {
 	fd_set read_fds;
 	int max_fd = server_fd;
 
+	size_t buffer_size = 256;
+	char *buffer = xalloc(buffer_size, sizeof(char));
+
 	while (1) {
 		// Reset read_fds
 		FD_ZERO(&read_fds);
@@ -160,9 +163,27 @@ int main(int argc, char **argv) {
 			// Read message from client
 			for (int i = 1; i <= clients[0]; i++) {
 				if (FD_ISSET(clients[i], &read_fds)) {
-					char buffer[256];
-					bzero(buffer, 256);
-					int bytes_recieved = recv(clients[i], buffer, 255, 0);
+					int bytes_recieved;
+					int total_bytes_recieved = 0;
+
+					while (1) {
+						bytes_recieved = recv(clients[i], buffer, buffer_size - 1, 0);
+
+						if (bytes_recieved <= 0) {
+							break;
+						}
+
+						total_bytes_recieved += bytes_recieved;
+
+						if (total_bytes_recieved == buffer_size - 1) {
+							buffer_size *= 2;
+							buffer = xrealloc(buffer, buffer_size, sizeof(char));
+						} else {
+							break;
+						}
+					}
+					buffer[total_bytes_recieved] = '\0';
+
 
 					if (bytes_recieved > 0) {
 						send_message(clients, buffer, i, false);
@@ -179,6 +200,7 @@ int main(int argc, char **argv) {
 			}
 		}
 	}
+	free(buffer);
 	free(clients);
 	return EXIT_SUCCESS;
 }
